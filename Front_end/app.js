@@ -1,91 +1,98 @@
 const API_URL = 'https://backend-desarrollo-web-pntm.onrender.com';
-
-// Tu backend actual usa JWT por header. Por eso se deja false.
-// Si en otra versión usan cookies, cambiar a true y configurar CORS credentials en el backend.
 axios.defaults.withCredentials = false;
-
-document.getElementById('apiText').textContent = API_URL;
 
 let carreras = [];
 let paginaActual = 1;
 let totalPaginas = 1;
+let vistaActual = 'proyectos';
 
-function getToken() {
-  return localStorage.getItem('token');
-}
-
-function setToken(token) {
-  localStorage.setItem('token', token);
-}
-
+function getToken() { return localStorage.getItem('token'); }
+function setToken(t) { localStorage.setItem('token', t); }
 function getAuthHeaders() {
-  const token = getToken();
-  return token ? { Authorization: 'Bearer ' + token } : {};
+  const t = getToken();
+  return t ? { Authorization: 'Bearer ' + t } : {};
 }
 
-function mostrarMensaje(texto, esError = false) {
-  const box = document.getElementById('mensaje');
-  box.textContent = texto;
-  box.className = esError ? 'mensaje error' : 'mensaje';
-  setTimeout(() => box.classList.add('oculto'), 4500);
+let toastTimer;
+function showToast(texto, tipo = 'success') {
+  const el = document.getElementById('toast');
+  el.textContent = texto;
+  el.className = `toast ${tipo} show`;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 3800);
 }
-
+function mostrarMensaje(texto) { showToast(texto, 'success'); }
 function mostrarError(error) {
-  const mensaje = error.response?.data?.message || error.message || 'Ocurrió un error';
-  mostrarMensaje(mensaje, true);
+  const msg = error.response?.data?.message || error.message || 'Ocurrió un error';
+  showToast(msg, 'error');
 }
 
-function actualizarVista() {
-  const tieneToken = !!getToken();
-  document.getElementById('authSection').classList.toggle('oculto', tieneToken);
-  document.getElementById('appSection').classList.toggle('oculto', !tieneToken);
+function irAVista(vista) {
+  vistaActual = vista;
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
 
-  const nav = document.getElementById('nav');
-  nav.innerHTML = tieneToken ? '<button onclick="cerrarSesion()">Cerrar sesión</button>' : '';
+  const viewEl = document.getElementById(`view-${vista}`);
+  if (viewEl) viewEl.classList.add('active');
 
-  if (tieneToken) {
-    cargarPerfil();
-    cargarProyectos();
-    cargarMisPostulaciones();
-  }
+  const navEl = document.querySelector(`.nav-item[data-view="${vista}"]`);
+  if (navEl) navEl.classList.add('active');
+
+  const titulos = {
+    proyectos: 'Explorar proyectos',
+    crear: 'Nuevo proyecto',
+    postulaciones: 'Mis postulaciones',
+    admin: 'Panel de administrador'
+  };
+  document.getElementById('topbarTitle').textContent = titulos[vista] || 'InterLink';
+
+  document.getElementById('sidebar').classList.remove('open');
+
+  if (vista === 'postulaciones') cargarMisPostulaciones();
+}
+
+function mostrarAuthScreen() {
+  document.getElementById('authScreen').classList.remove('oculto');
+  document.getElementById('appScreen').classList.add('oculto');
+}
+function mostrarAppScreen() {
+  document.getElementById('authScreen').classList.add('oculto');
+  document.getElementById('appScreen').classList.remove('oculto');
 }
 
 async function cargarCarreras() {
   try {
     const res = await axios.get(`${API_URL}/api/carreras`);
     carreras = res.data.data || res.data || [];
-
-    llenarSelect('registroCarrera', carreras, 'Seleccione una carrera');
+    llenarSelect('registroCarrera', carreras, 'Selecciona tu carrera');
     llenarSelect('proyectoCarreras', carreras, null);
-    llenarSelect('filtroCarrera', carreras, 'Todas');
+    llenarSelect('filtroCarrera', carreras, 'Todas las carreras');
   } catch (error) {
-    mostrarError(error);
-    const select = document.getElementById('registroCarrera');
-    select.innerHTML = '<option value="">No se pudieron cargar carreras</option>';
+    const s = document.getElementById('registroCarrera');
+    s.innerHTML = '<option value="">No se pudieron cargar carreras</option>';
   }
 }
 
 function llenarSelect(id, items, textoInicial) {
   const select = document.getElementById(id);
+  if (!select) return;
   select.innerHTML = '';
-
   if (textoInicial !== null) {
-    const option = document.createElement('option');
-    option.value = '';
-    option.textContent = textoInicial;
-    select.appendChild(option);
+    const opt = document.createElement('option');
+    opt.value = ''; opt.textContent = textoInicial;
+    select.appendChild(opt);
   }
-
-  items.forEach(carrera => {
-    const option = document.createElement('option');
-    option.value = carrera._id;
-    option.textContent = carrera.nombre;
-    select.appendChild(option);
+  items.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c._id; opt.textContent = c.nombre;
+    select.appendChild(opt);
   });
 }
 
 async function registrar(event) {
   event.preventDefault();
+  const btn = event.target.querySelector('[type=submit]');
+  btn.disabled = true; btn.textContent = 'Creando cuenta...';
   try {
     const data = {
       nombre: document.getElementById('registroNombre').value.trim(),
@@ -93,50 +100,48 @@ async function registrar(event) {
       contrasena: document.getElementById('registroContrasena').value.trim(),
       carrera: document.getElementById('registroCarrera').value
     };
-
     await axios.post(`${API_URL}/api/auth/register`, data);
-    mostrarMensaje('Usuario registrado correctamente. Ahora inicia sesión.');
+    mostrarMensaje('Cuenta creada. Ahora inicia sesión.');
     document.getElementById('loginCorreo').value = data.correo;
     document.getElementById('loginContrasena').value = data.contrasena;
     event.target.reset();
+    // Cambiar tab a login
+    document.querySelectorAll('.auth-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === 'login'));
+    document.querySelectorAll('.auth-form').forEach(f => f.classList.toggle('active', f.dataset.tabContent === 'login'));
   } catch (error) {
     mostrarError(error);
+  } finally {
+    btn.disabled = false; btn.innerHTML = '<span>Crear cuenta</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>';
   }
 }
 
 async function login(event) {
   event.preventDefault();
-
+  const btn = event.target.querySelector('[type=submit]');
+  btn.disabled = true; btn.textContent = 'Entrando...';
   try {
     const data = {
       correo: document.getElementById('loginCorreo').value.trim(),
       contrasena: document.getElementById('loginContrasena').value.trim()
     };
-
     const res = await axios.post(`${API_URL}/api/auth/login`, data);
     const token = res.data.token || res.data.data?.token;
-
-    if (!token) {
-      mostrarMensaje('Login correcto, pero no se recibió token.', true);
-      return;
-    }
-
+    if (!token) { mostrarError({ message: 'No se recibió token.' }); return; }
     setToken(token);
 
     const perfilRes = await axios.get(`${API_URL}/api/usuarios/perfil`, {
-      headers: {
-        Authorization: `Bearer ${token}`
-      }
+      headers: { Authorization: `Bearer ${token}` }
     });
-
     const usuario = perfilRes.data.data || perfilRes.data.usuario || perfilRes.data;
     localStorage.setItem('usuario', JSON.stringify(usuario));
 
-    mostrarMensaje('Sesión iniciada correctamente.');
-    actualizarVista();
-
+    mostrarMensaje('¡Bienvenido!');
+    iniciarApp();
   } catch (error) {
     mostrarError(error);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<span>Entrar</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>';
   }
 }
 
@@ -144,233 +149,282 @@ async function cargarPerfil() {
   try {
     const res = await axios.get(`${API_URL}/api/usuarios/perfil`, { headers: getAuthHeaders() });
     const u = res.data.data || res.data.usuario || res.data;
-    document.getElementById('perfilTexto').innerHTML = `
-      <strong>${u.nombre || 'Usuario'}</strong><br>
-      ${u.correo || ''}<br>
-      Rol: ${u.rol || 'alumno'}
-    `;
-  } catch (error) {
-    mostrarError(error);
-  }
+    const nombre = u.nombre || 'Usuario';
+    document.getElementById('sidebarNombre').textContent = nombre;
+    document.getElementById('sidebarRol').textContent = u.rol || 'alumno';
+    document.getElementById('avatarInitial').textContent = nombre.charAt(0).toUpperCase();
+    localStorage.setItem('usuario', JSON.stringify(u));
+  } catch (e) {}
 }
 
 async function crearProyecto(event) {
   event.preventDefault();
+  const btn = event.target.querySelector('[type=submit]');
+  btn.disabled = true; btn.textContent = 'Publicando...';
   try {
     const carrerasSeleccionadas = Array.from(document.getElementById('proyectoCarreras').selectedOptions).map(o => o.value);
-
     const data = {
       titulo: document.getElementById('proyectoTitulo').value.trim(),
       descripcion: document.getElementById('proyectoDescripcion').value.trim(),
       carreras: carrerasSeleccionadas,
       cupoMaximo: Number(document.getElementById('proyectoCupo').value)
     };
-
     await axios.post(`${API_URL}/api/proyectos`, data, { headers: getAuthHeaders() });
-    mostrarMensaje('Proyecto creado correctamente.');
+    mostrarMensaje('Proyecto publicado correctamente.');
     event.target.reset();
     document.getElementById('proyectoCupo').value = 3;
+    irAVista('proyectos');
     cargarProyectos();
   } catch (error) {
     mostrarError(error);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="18" height="18"><path d="M12 5v14M5 12h14"/></svg> Publicar proyecto';
   }
 }
 
 async function cargarProyectos() {
+  const limit = document.getElementById('filtroLimit')?.value || 5;
+  const buscar = document.getElementById('filtroBuscar')?.value || '';
+  const estado = document.getElementById('filtroEstado')?.value || '';
+  const carrera = document.getElementById('filtroCarrera')?.value || '';
+
+  const params = new URLSearchParams({ page: paginaActual, limit });
+  if (buscar) params.append('buscar', buscar);
+  if (estado) params.append('estado', estado);
+  if (carrera) params.append('carrera', carrera);
+
+  const lista = document.getElementById('proyectosLista');
+  lista.innerHTML = renderSkeletons(3);
+
   try {
-    const limit = document.getElementById('filtroLimit')?.value || 5;
-    const buscar = document.getElementById('filtroBuscar')?.value || '';
-    const estado = document.getElementById('filtroEstado')?.value || '';
-    const carrera = document.getElementById('filtroCarrera')?.value || '';
-
-    const params = new URLSearchParams({ page: paginaActual, limit });
-    if (buscar) params.append('buscar', buscar);
-    if (estado) params.append('estado', estado);
-    if (carrera) params.append('carrera', carrera);
-
     const res = await axios.get(`${API_URL}/api/proyectos?${params.toString()}`, { headers: getAuthHeaders() });
     const proyectos = res.data.data || [];
     const pag = res.data.pagination || {};
     totalPaginas = pag.pages || 1;
-
     document.getElementById('pageInfo').textContent = `Página ${pag.page || paginaActual} de ${totalPaginas}`;
     renderProyectos(proyectos);
   } catch (error) {
     mostrarError(error);
+    lista.innerHTML = '<div class="empty-state"><p>Error al cargar proyectos.</p></div>';
   }
+}
+
+function renderSkeletons(n) {
+  return Array(n).fill(0).map(() => `
+    <div class="proyecto-card">
+      <div class="skeleton" style="height:20px;width:70%;margin-bottom:8px"></div>
+      <div class="skeleton" style="height:14px;width:100%;margin-bottom:4px"></div>
+      <div class="skeleton" style="height:14px;width:85%"></div>
+    </div>
+  `).join('');
+}
+
+function estadoBadge(estado) {
+  const map = {
+    'Activo': 'activo',
+    'En progreso': 'progreso',
+    'Finalizado': 'finalizado'
+  };
+  const cls = map[estado] || 'finalizado';
+  return `<span class="estado-badge ${cls}">${estado}</span>`;
 }
 
 function renderProyectos(proyectos) {
   const cont = document.getElementById('proyectosLista');
-  cont.innerHTML = '';
-
   if (!proyectos.length) {
-    cont.innerHTML = '<p>No se encontraron proyectos.</p>';
+    cont.innerHTML = `<div class="empty-state">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      <p>No se encontraron proyectos.</p>
+    </div>`;
     return;
   }
 
-  proyectos.forEach(p => {
-    const div = document.createElement('div');
-    div.className = 'proyecto';
-    div.innerHTML = `
-      <h3>${p.titulo}</h3>
-      <p>${p.descripcion}</p>
-      <p><strong>Creador:</strong> ${p.creador?.nombre || 'N/A'}</p>
-      <p><strong>Estado:</strong> ${p.estado}</p>
-      <p><strong>Cupo máximo:</strong> ${p.cupoMaximo}</p>
-      <div>${(p.carreras || []).map(c => `<span class="badge">${c.nombre}</span>`).join('')}</div>
-      <div class="actions">
-        <button onclick="postularme('${p._id}')">Postularme</button>
-        <button onclick="verPostulacionesProyecto('${p._id}')" class="outline">Ver postulaciones</button>
-        <button onclick="cargarMensajes('${p._id}')" class="outline">Ver chat</button>
-        <button onclick="eliminarProyecto('${p._id}')" class="danger">Eliminar</button>
+  cont.innerHTML = proyectos.map(p => {
+    const carrerasHtml = (p.carreras || []).map(c => `<span class="carrera-chip">${c.nombre}</span>`).join('');
+    return `
+    <div class="proyecto-card" id="card-${p._id}">
+      <div class="proyecto-card-header">
+        <h3 class="proyecto-titulo">${p.titulo}</h3>
+        ${estadoBadge(p.estado)}
       </div>
-      <div id="extra-${p._id}"></div>
+      <p class="proyecto-desc">${p.descripcion}</p>
+      <div class="carreras-wrap">${carrerasHtml}</div>
+      <div class="proyecto-meta">
+        <span class="meta-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          ${p.creador?.nombre || 'N/A'}
+        </span>
+        <span class="meta-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          Cupo: ${p.cupoMaximo}
+        </span>
+      </div>
+      <div class="card-actions">
+        <button class="btn-primary compact" onclick="postularme('${p._id}')">Postularme</button>
+        <button class="btn-outline" onclick="toggleExtra('${p._id}', 'postulaciones')">Postulaciones</button>
+        <button class="btn-outline" onclick="toggleExtra('${p._id}', 'chat')">Chat</button>
+        <button class="btn-danger" onclick="eliminarProyecto('${p._id}')">Eliminar</button>
+      </div>
+      <div class="card-extra" id="extra-${p._id}"></div>
+    </div>
+  `}).join('');
+}
+
+let extraState = {};
+async function toggleExtra(id, tipo) {
+  const extra = document.getElementById(`extra-${id}`);
+  const key = `${id}-${tipo}`;
+  if (extraState[key] && extra.classList.contains('open')) {
+    extra.classList.remove('open');
+    extraState[key] = false;
+    return;
+  }
+  extraState = {};
+  document.querySelectorAll('.card-extra').forEach(e => e.classList.remove('open'));
+  extraState[key] = true;
+  extra.classList.add('open');
+  extra.innerHTML = '<div class="skeleton" style="height:80px;width:100%"></div>';
+  if (tipo === 'postulaciones') await renderPostulacionesCard(id, extra);
+  if (tipo === 'chat') await renderChatCard(id, extra);
+}
+
+async function renderPostulacionesCard(id, container) {
+  try {
+    const res = await axios.get(`${API_URL}/api/proyectos/${id}/postulaciones`, { headers: getAuthHeaders() });
+    const posts = res.data.data || [];
+    if (!posts.length) {
+      container.innerHTML = '<p style="color:var(--text-3);font-size:13px">Sin postulaciones aún.</p>';
+      return;
+    }
+    container.innerHTML = `<h4 style="font-size:13px;color:var(--text-2);margin-bottom:8px;font-family:var(--font-display)">Postulaciones recibidas</h4>` +
+      posts.map(s => `
+        <div class="postulacion-item">
+          <span><strong>${s.solicitante?.nombre || s.usuario?.nombre || 'Alumno'}</strong> — ${s.estado}</span>
+          <div style="display:flex;gap:6px">
+            <button class="btn-outline" onclick="actualizarPostulacion('${id}','${s._id}','Aceptada')">Aceptar</button>
+            <button class="btn-danger" style="font-size:12px;padding:6px 10px" onclick="actualizarPostulacion('${id}','${s._id}','Rechazada')">Rechazar</button>
+          </div>
+        </div>
+      `).join('');
+  } catch (e) {
+    container.innerHTML = '<p style="color:var(--red);font-size:13px">Error al cargar postulaciones.</p>';
+  }
+}
+
+async function renderChatCard(id, container) {
+  try {
+    const res = await axios.get(`${API_URL}/api/proyectos/${id}/mensajes`, { headers: getAuthHeaders() });
+    const msgs = res.data.data || [];
+    container.innerHTML = `
+      <h4 style="font-size:13px;color:var(--text-2);margin-bottom:8px;font-family:var(--font-display)">Chat del proyecto</h4>
+      <div class="mensajes-list" id="msgs-${id}">
+        ${msgs.length ? msgs.map(m => `
+          <div class="mensaje-item">
+            <strong>${m.remitente?.nombre || 'Usuario'}</strong>: ${m.contenido}
+          </div>`).join('') : '<p style="color:var(--text-3);font-size:13px">Sé el primero en escribir.</p>'}
+      </div>
+      <div class="mensaje-form">
+        <input type="text" id="msg-input-${id}" placeholder="Escribe un mensaje..." />
+        <button class="btn-primary compact" onclick="enviarMensaje('${id}')">Enviar</button>
+      </div>
     `;
-    cont.appendChild(div);
-  });
+  } catch (e) {
+    container.innerHTML = '<p style="color:var(--red);font-size:13px">Error al cargar mensajes.</p>';
+  }
 }
 
 async function eliminarProyecto(id) {
-  if (!confirm('¿Eliminar proyecto?')) return;
-
+  if (!confirm('¿Eliminar este proyecto?')) return;
   try {
-    const token = localStorage.getItem('token');
-    const usuarioGuardado = localStorage.getItem('usuario');
-
-    let usuario = null;
-
-    if (usuarioGuardado) {
-      usuario = JSON.parse(usuarioGuardado);
-    }
-
-    let ruta;
-
-    if (usuario && usuario.rol === 'administrador') {
-      ruta = `${API_URL}/api/admin/proyectos/${id}`;
-    } else {
-      ruta = `${API_URL}/api/proyectos/${id}`;
-    }
-
-    await axios.delete(ruta, {
-      headers: {
-        Authorization: `Bearer ${token}`
-      }
-    });
-
-    mostrarMensaje('Proyecto eliminado correctamente.');
+    const usuario = JSON.parse(localStorage.getItem('usuario') || '{}');
+    const ruta = usuario.rol === 'administrador'
+      ? `${API_URL}/api/admin/proyectos/${id}`
+      : `${API_URL}/api/proyectos/${id}`;
+    await axios.delete(ruta, { headers: getAuthHeaders() });
+    mostrarMensaje('Proyecto eliminado.');
     cargarProyectos();
-
-  } catch (error) {
-    mostrarError(error);
-  }
+  } catch (error) { mostrarError(error); }
 }
 
 async function postularme(id) {
   try {
     await axios.post(`${API_URL}/api/proyectos/${id}/postulaciones`, {}, { headers: getAuthHeaders() });
-    mostrarMensaje('Postulación enviada correctamente.');
-    cargarMisPostulaciones();
-  } catch (error) {
-    mostrarError(error);
-  }
-}
-
-async function cargarMisPostulaciones() {
-  try {
-    const res = await axios.get(`${API_URL}/api/usuarios/mis-postulaciones`, { headers: getAuthHeaders() });
-    const postulaciones = res.data.data || [];
-    const cont = document.getElementById('misPostulaciones');
-
-    if (!postulaciones.length) {
-      cont.innerHTML = '<p>No tienes postulaciones.</p>';
-      return;
-    }
-
-    cont.innerHTML = postulaciones.map(s => `
-      <div class="proyecto">
-        <strong>${s.proyecto?.titulo || 'Proyecto'}</strong><br>
-        Estado: <span class="badge">${s.estado}</span>
-      </div>
-    `).join('');
-  } catch (error) {
-    mostrarError(error);
-  }
-}
-
-async function verPostulacionesProyecto(id) {
-  try {
-    const res = await axios.get(`${API_URL}/api/proyectos/${id}/postulaciones`, { headers: getAuthHeaders() });
-    const postulaciones = res.data.data || [];
-    const extra = document.getElementById(`extra-${id}`);
-
-    if (!postulaciones.length) {
-      extra.innerHTML = '<p>No hay postulaciones para este proyecto.</p>';
-      return;
-    }
-
-    extra.innerHTML = '<h4>Postulaciones recibidas</h4>' + postulaciones.map(s => `
-      <div class="proyecto">
-        <strong>${s.solicitante?.nombre || s.usuario?.nombre || 'Alumno'}</strong><br>
-        Estado: ${s.estado}
-        <div class="actions">
-          <button onclick="actualizarPostulacion('${id}', '${s._id}', 'Aceptada')">Aceptar</button>
-          <button onclick="actualizarPostulacion('${id}', '${s._id}', 'Rechazada')" class="danger">Rechazar</button>
-        </div>
-      </div>
-    `).join('');
-  } catch (error) {
-    mostrarError(error);
-  }
+    mostrarMensaje('Postulación enviada.');
+  } catch (error) { mostrarError(error); }
 }
 
 async function actualizarPostulacion(proyectoId, postulacionId, estado) {
   try {
     await axios.patch(`${API_URL}/api/proyectos/${proyectoId}/postulaciones/${postulacionId}`, { estado }, { headers: getAuthHeaders() });
     mostrarMensaje('Postulación actualizada.');
-    verPostulacionesProyecto(proyectoId);
-  } catch (error) {
-    mostrarError(error);
-  }
+    toggleExtra(proyectoId, 'postulaciones');
+    setTimeout(() => toggleExtra(proyectoId, 'postulaciones'), 100);
+  } catch (error) { mostrarError(error); }
 }
 
-async function cargarMensajes(id) {
+async function enviarMensaje(id) {
+  const input = document.getElementById(`msg-input-${id}`);
+  if (!input?.value.trim()) return;
   try {
-    const res = await axios.get(`${API_URL}/api/proyectos/${id}/mensajes`, { headers: getAuthHeaders() });
-    const mensajes = res.data.data || [];
-    const extra = document.getElementById(`extra-${id}`);
-    extra.innerHTML = `
-      <h4>Chat</h4>
-      <div>${mensajes.map(m => `<p><strong>${m.remitente?.nombre || 'Usuario'}:</strong> ${m.contenido}</p>`).join('') || '<p>No hay mensajes.</p>'}</div>
-      <form onsubmit="enviarMensaje(event, '${id}')">
-        <input type="text" id="mensaje-${id}" placeholder="Escribe un mensaje" required />
-        <button type="submit">Enviar</button>
-      </form>
-    `;
-  } catch (error) {
-    mostrarError(error);
-  }
-}
-
-async function enviarMensaje(event, id) {
-  event.preventDefault();
-  try {
-    const input = document.getElementById(`mensaje-${id}`);
     await axios.post(`${API_URL}/api/proyectos/${id}/mensajes`, { contenido: input.value }, { headers: getAuthHeaders() });
     input.value = '';
-    cargarMensajes(id);
+    await renderChatCard(id, document.getElementById(`extra-${id}`));
+  } catch (error) { mostrarError(error); }
+}
+
+async function cargarMisPostulaciones() {
+  const cont = document.getElementById('misPostulaciones');
+  cont.innerHTML = '<div class="skeleton" style="height:80px;width:100%;margin-bottom:10px"></div>';
+  try {
+    const res = await axios.get(`${API_URL}/api/usuarios/mis-postulaciones`, { headers: getAuthHeaders() });
+    const posts = res.data.data || [];
+    if (!posts.length) {
+      cont.innerHTML = `<div class="empty-state">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="10"/></svg>
+        <p>Aún no te has postulado a ningún proyecto.</p>
+      </div>`;
+      return;
+    }
+    cont.innerHTML = posts.map(s => {
+      const estadoClass = s.estado === 'Aceptada' ? 'activo' : s.estado === 'Rechazada' ? 'finalizado' : 'progreso';
+      return `
+      <div class="postulacion-card">
+        <div>
+          <div class="postulacion-card-title">${s.proyecto?.titulo || 'Proyecto'}</div>
+          <div class="postulacion-card-sub">${s.proyecto?.descripcion?.slice(0,80) || ''}${s.proyecto?.descripcion?.length > 80 ? '...' : ''}</div>
+        </div>
+        <span class="estado-badge ${estadoClass}">${s.estado}</span>
+      </div>`;
+    }).join('');
   } catch (error) {
     mostrarError(error);
   }
 }
 
 async function cargarAdmin() {
+  const panel = document.getElementById('adminPanel');
+  panel.innerHTML = '<div class="skeleton" style="height:80px;width:100%;margin-bottom:10px"></div>';
   try {
     const res = await axios.get(`${API_URL}/api/admin/usuarios`, { headers: getAuthHeaders() });
     const usuarios = res.data.data || [];
-    document.getElementById('adminPanel').innerHTML = '<pre>' + JSON.stringify(usuarios, null, 2) + '</pre>';
+    if (!usuarios.length) {
+      panel.innerHTML = '<p style="color:var(--text-3)">No hay usuarios.</p>';
+      return;
+    }
+    panel.innerHTML = usuarios.map(u => `
+      <div class="usuario-card">
+        <div class="avatar" style="background:linear-gradient(135deg,var(--accent),#9b93ff)">${(u.nombre || 'U').charAt(0)}</div>
+        <div class="usuario-card-info">
+          <div class="usuario-card-nombre">${u.nombre}</div>
+          <div class="usuario-card-correo">${u.correo}</div>
+        </div>
+        <span class="rol-badge ${u.rol}">${u.rol}</span>
+      </div>
+    `).join('');
   } catch (error) {
     mostrarError(error);
+    panel.innerHTML = '<p style="color:var(--red);font-size:14px">Solo disponible para administradores.</p>';
   }
 }
 
@@ -378,7 +432,19 @@ function cerrarSesion() {
   localStorage.removeItem('token');
   localStorage.removeItem('usuario');
   mostrarMensaje('Sesión cerrada.');
-  actualizarVista();
+  setTimeout(mostrarAuthScreen, 400);
+}
+
+function iniciarApp() {
+  mostrarAppScreen();
+  cargarPerfil();
+  cargarProyectos();
+  irAVista('proyectos');
+}
+
+function actualizarVista() {
+  if (getToken()) iniciarApp();
+  else mostrarAuthScreen();
 }
 
 document.getElementById('registroForm').addEventListener('submit', registrar);
@@ -389,6 +455,35 @@ document.getElementById('filtrarBtn').addEventListener('click', () => { paginaAc
 document.getElementById('prevPage').addEventListener('click', () => { if (paginaActual > 1) { paginaActual--; cargarProyectos(); } });
 document.getElementById('nextPage').addEventListener('click', () => { if (paginaActual < totalPaginas) { paginaActual++; cargarProyectos(); } });
 document.getElementById('cargarAdminBtn').addEventListener('click', cargarAdmin);
+
+document.querySelectorAll('.nav-item').forEach(btn => {
+  btn.addEventListener('click', () => irAVista(btn.dataset.view));
+});
+
+document.getElementById('menuToggle').addEventListener('click', () => {
+  document.getElementById('sidebar').classList.toggle('open');
+});
+
+document.querySelectorAll('.auth-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    const target = tab.dataset.tab;
+    document.querySelectorAll('.auth-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === target));
+    document.querySelectorAll('.auth-form').forEach(f => f.classList.toggle('active', f.dataset.tabContent === target));
+  });
+});
+
+document.getElementById('modalCloseBtn').addEventListener('click', () => {
+  document.getElementById('modalOverlay').classList.add('oculto');
+});
+document.getElementById('modalOverlay').addEventListener('click', (e) => {
+  if (e.target === document.getElementById('modalOverlay')) {
+    document.getElementById('modalOverlay').classList.add('oculto');
+  }
+});
+
+document.getElementById('filtroBuscar').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { paginaActual = 1; cargarProyectos(); }
+});
 
 cargarCarreras();
 actualizarVista();
