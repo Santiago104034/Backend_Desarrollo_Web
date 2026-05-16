@@ -4,7 +4,7 @@ info:
   version: 1.0.0
   description: API REST para conectar estudiantes con proyectos multidisciplinarios.
 servers:
-  - url: http://localhost:3000
+  - url: https://backend-desarrollo-web-pntm.onrender.com
 components:
   securitySchemes:
     bearerAuth:
